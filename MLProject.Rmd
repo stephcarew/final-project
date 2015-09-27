@@ -1,0 +1,92 @@
+---
+title: "Predicting exercise type from accelerometer data"
+author: "Steph Carew"
+date: "September 27, 2015"
+---
+
+#Executive Summary
+We load and clean exercise data from http://groupware.les.inf.puc-rio.br/har. We partition our training data in order to build a model using the random forest algorithm. We use cross validation to estimate an accuracy of over 99% and then test this on a small set of new data.
+
+#Data Processing
+We begin by loading the required libraries for this analysis.
+
+```{r warning = FALSE, message = FALSE}
+library(caret)
+library(randomForest)
+```
+
+Next we load our data sets into memory.
+```{r warning = FALSE, message = FALSE}
+#read the training and testing data into memory, replacing blank cells and Div/0 cells with NAs
+training <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",na.strings=c("#DIV/0!",""))
+testing <-  read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",na.strings=c("#DIV/0!",""))
+```
+
+
+A manual inspection of the data shows us that we have many columns that will not be useful features of our prediction model. These include the first 7 columns (user identifiers) as well as any column that has a significant number of NAs. We remove these columns from consideration from the model. We also force feature variables to be numeric and the classe variable to be a factor.
+
+```{r warning = FALSE, message = FALSE}
+#remove columns in our training and testing that are not useful for building and evaluating the model
+feature_set <- colnames(training[colSums(is.na(training)) == 0])[-(1:7)]
+training <- training[feature_set]
+#force all features to be numerical, other than the classe variable (which should be a factor)
+training$classe <-as.factor(training$classe)
+training[, 1:119] <- sapply(training[, 1:119], as.numeric)
+testing[, 1:159] <- sapply(testing[, 1:159], as.numeric)
+```
+
+In order to better estimate the true accuracy of our model, we partition our training set into two sets. We will 60% of the data to train the model and reserve 40% of the data to test the out of sample accuracy of the model.
+
+```{r warning = FALSE, message = FALSE}
+#partition the training data into two sets to better understand in and out of sample error
+my_partition <- createDataPartition(y=training$classe, p=0.6, list=FALSE )
+my_training <- training[my_partition,]
+my_testing <- training[-my_partition,]
+```
+
+#Model Building and Evaluation
+Given its flexibility, we use a random forest approach to build our model. We first fit the model using the data set aside as training data and estimate the in sample error on this same data set. 
+
+```{r warning = FALSE, message = FALSE}
+model_fit <- randomForest(classe ~. , data=my_training)
+
+#estimate in sample error
+in_sample_predict <- predict(model_fit, my_training, type = "class")
+confusionMatrix(in_sample_predict, my_training$classe)
+```
+
+As seen in the confusion matrix, the estimated in sample accuracy is 100%. However, we want to make sure that we are not overfitting the model, and thus want to estimate the out of sample error, which will be lower than the in sample error.
+
+We estimate the out of sample error using one round of cross validation. Because we left out some of the data in the original training set when we built the model, we can estimate out of sample error on this data set.
+
+```{r warning = FALSE, message = FALSE}
+#estimate out of sample error
+out_sample_predict <- predict(model_fit, my_testing, type = "class")
+confusionMatrix(out_sample_predict, my_testing$classe)
+```
+We see that the out of sample accuracy is still above 99%.
+
+#Performance on original test set
+Now that we have estimated out of sample error, we use all of our training data to build a model to test on the new data (the original test data). We provide the code used to build the files for submission. The performance on the test data was 20/20, which is not surprising given our out of sample error prediction of over 99%.
+
+```{r warning = FALSE, message = FALSE}
+#build a model using all the training data
+full_model_fit <- randomForest(classe ~. , data=training)
+test_predict <- predict(full_model_fit, testing, type = "class")
+
+
+#prepare files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(test_predict)
+```
+
+
+#Conclusion
+We used the random forest algorithm to train a machine learning algorithm with an estimated accuracy of over 99% on out of sample data, and then tested this model on on a set of 20 observations. The model got all of these 20 observations correct.
